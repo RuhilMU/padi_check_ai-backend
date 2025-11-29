@@ -1,0 +1,90 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init | "../generated/prisma"
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Severity {
+  HEALTHY // Sehat
+  LOW     // Rendah
+  MEDIUM  // Sedang
+  HIGH    // Tinggi
+}
+
+// 1. Tabel User
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  fullName  String
+  phone     String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  detections DetectionHistory[]
+}
+
+// 2. Tabel Diseases
+model Disease {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String   
+  description String   @db.Text
+  
+  symptoms    String[] 
+  treatments  String[] 
+  preventions String[] 
+  
+  thumbnailUrl String? 
+
+  detections DetectionHistory[]
+  articles   Article[]
+}
+
+// 3. Tabel DetectionHistory
+model DetectionHistory {
+  id          String   @id @default(uuid())
+  imageUrl    String
+  accuracy    Float
+  severity    Severity
+  status      String
+  
+  detectedAt  DateTime @default(now())
+
+  diseaseId   Int
+  disease     Disease  @relation(fields: [diseaseId], references: [id])
+
+  userId      String?  // Nullable, jaga-jaga kalau ada fitur "Coba Tanpa Login"
+  user        User?    @relation(fields: [userId], references: [id])
+}
+
+// 4. Tabel Articles
+model Article {
+  id           Int      @id @default(autoincrement())
+  title        String
+  slug         String   @unique
+  category     String
+  readDuration Int
+  thumbnailUrl String
+  content      String   @db.Text
+  createdAt    DateTime @default(now())
+
+  diseaseId    Int?
+  disease      Disease? @relation(fields: [diseaseId], references: [id])
+}
