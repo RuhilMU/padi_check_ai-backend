@@ -6,24 +6,17 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {
   USER
   ADMIN
-}
-
-enum Severity {
-  HEALTHY // Sehat
-  LOW     // Rendah
-  MEDIUM  // Sedang
-  HIGH    // Tinggi
 }
 
 // 1. Tabel User
@@ -45,33 +38,28 @@ model Disease {
   id          Int      @id @default(autoincrement())
   code        String   @unique
   name        String   
-  description String   @db.Text
-  
-  symptoms    String[] 
-  treatments  String[] 
-  preventions String[] 
-  
-  thumbnailUrl String? 
+  description String   @db.Text  
+  solutions   String[]
+  thumbnailUrl String?
 
+  // Relasi
   detections DetectionHistory[]
-  articles   Article[]
+  articles   Article[] 
 }
 
 // 3. Tabel DetectionHistory
 model DetectionHistory {
-  id          String   @id @default(uuid())
+  id          String   @id
   imageUrl    String
   accuracy    Float
-  severity    Severity
   status      String
-  
   detectedAt  DateTime @default(now())
 
+  // Relasi
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
   diseaseId   Int
   disease     Disease  @relation(fields: [diseaseId], references: [id])
-
-  userId      String?  // Nullable, jaga-jaga kalau ada fitur "Coba Tanpa Login"
-  user        User?    @relation(fields: [userId], references: [id])
 }
 
 // 4. Tabel Articles
@@ -80,11 +68,17 @@ model Article {
   title        String
   slug         String   @unique
   category     String
-  readDuration Int
+  author       String
+  description  String   @db.Text
+  symptoms     String   @db.Text
+  causes       String   @db.Text
+  treatment    String   @db.Text
+  prevention   String   @db.Text
+  conclusion   String   @db.Text
   thumbnailUrl String
-  content      String   @db.Text
   createdAt    DateTime @default(now())
 
-  diseaseId    Int?
+  // Relasi
+  diseaseId    Int?     
   disease      Disease? @relation(fields: [diseaseId], references: [id])
 }
