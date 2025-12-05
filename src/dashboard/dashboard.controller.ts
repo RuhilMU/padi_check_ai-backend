@@ -14,4 +14,9 @@ export class DashboardController {
   async getDashboardChart() {
     return this.dashboardService.getChartData();
   }
+
+  @Get('recent')
+  async getRecentActivities() {
+    return this.dashboardService.getRecentActivities();
+  }
 }

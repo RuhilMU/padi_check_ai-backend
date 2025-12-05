@@ -8,42 +8,85 @@ export class DetectionsService {
 
   async processDetection(file: Express.Multer.File, userId: string) {
     
-    // Nanti ganti domain asli
-    const imageUrl = `http://localhost:3000/uploads/${file.filename}`;
+    const baseUrl = 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN;
+    const imageUrl = `${baseUrl}/uploads/${file.filename}`;
 
     // MOCK ML Purapura panggil AI Python, acak dulu biar backend jalan
     const mockResult = this.mockPrediction(); 
 
     const disease = await prisma.disease.findUnique({
-      where: { code: mockResult.predictedClass }
+      where: { code: mockResult.predictedClass },
+      include: {
+        articles: true,
+      }
     });
 
     if (!disease) {
       throw new NotFoundException(`Penyakit ${mockResult.predictedClass} tidak ditemukan di database.`);
     }
 
-    let severity: 'HEALTHY' | 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
-    if (disease.code === 'healthy') severity = 'HEALTHY';
-    else if (mockResult.confidence > 0.9) severity = 'HIGH';
-    else if (mockResult.confidence > 0.7) severity = 'MEDIUM';
-
+    const newId = await this.generateDetectionId();
     const history = await prisma.detectionHistory.create({
       data: {
+        id: newId,
         imageUrl: imageUrl,
         accuracy: parseFloat((mockResult.confidence * 100).toFixed(1)),
-        severity: severity,
-        status: disease.code === 'healthy' ? 'Sehat' : 'Terdeteksi',
+        status: disease.code === 'healthy' ? 'Sehat' : 'Terdeteksi Penyakit',
         diseaseId: disease.id,
-        userId: userId
+        userId: userId,
       },
       include: {
-        disease: true
+        disease: {
+          include: {
+            articles: true,
+          }
+        }
       }
     });
+
     return {
       message: 'Deteksi berhasil',
+      data: {
+        id: history.id,
+        imageUrl: history.imageUrl,
+        accuracy: history.accuracy,
+        status: history.status,
+        detectedAt: history.detectedAt,
+        disease: {
+          name: history.disease.name,
+          description: history.disease.description,
+          solutions: history.disease.solutions,
+        },
+        articleSlug: history.disease.articles.length > 0 ? history.disease.articles[0].slug : null
+      }
+    };
+  }
+
+  async findAllHistory(userId?: string) {
+    const whereCondition = userId ? { userId: userId } : {};
+
+    const history = await prisma.detectionHistory.findMany({
+      where: whereCondition,
+      orderBy: {
+        detectedAt: 'desc',
+      },
+      include: {
+        disease: true,
+      }
+    });
+
+    return {
+      message: 'Data riwayat berhasil diambil',
       data: history
     };
+  }
+
+  private async generateDetectionId(): Promise<string> {
+    const now = new Date();
+    const year = now.getFullYear();
+    const count = await prisma.detectionHistory.count();
+    const sequence = String(count + 1).padStart(3, '0');
+    return `DET-${year}-${sequence}`;
   }
 
   // MOCKING AI (Nanti apus kalau model sudah jadey)
@@ -64,7 +107,7 @@ export class DetectionsService {
 
     return {
       predictedClass: randomClass,
-      confidence: randomConfidence
+      confidence: randomConfidence,
     };
   }
 }

@@ -18,7 +18,6 @@ export class DashboardService {
 
     const totalDetections = aggregations._count.id;
     const avgAccuracy = aggregations._avg.accuracy || 0;
-
     const topDiseaseGroup = await prisma.detectionHistory.groupBy({
       by: ['diseaseId'],
       _count: {
@@ -47,39 +46,72 @@ export class DashboardService {
 
     return {
       totalDetections,
-      averageAccuracy: parseFloat(avgAccuracy.toFixed(2)),
+      averageAccuracy: parseFloat(avgAccuracy.toFixed(2)), 
       topDisease: {
         name: topDiseaseName,
         total: topDiseaseCount
       },
-      systemStatus: 'Online'
     };
   }
 
-  async getChartData() {
+  async getChartData() {   
+    const healthyDisease = await prisma.disease.findUnique({
+      where: { code: 'healthy' }
+    });
+
     const diseaseGroups = await prisma.detectionHistory.groupBy({
       by: ['diseaseId'],
       _count: {
         diseaseId: true,
       },
+      where: {
+        diseaseId: {
+          not: healthyDisease?.id || -1
+        }
+      }
     });
 
-    const allDiseases = await prisma.disease.findMany();
-    const totalCount = diseaseGroups.reduce((acc, curr) => acc + curr._count.diseaseId, 0);
-
-    const chartData = allDiseases.map(disease => {
+    const sickDiseases = await prisma.disease.findMany({
+      where: {
+        code: {
+          not: 'healthy' 
+        }
+      }
+    });
+    
+    const totalSickCount = diseaseGroups.reduce((acc, curr) => acc + curr._count.diseaseId, 0);
+    const chartData = sickDiseases.map(disease => {
       const found = diseaseGroups.find(g => g.diseaseId === disease.id);
       const count = found ? found._count.diseaseId : 0;
-      
-      const percentage = totalCount > 0 ? (count / totalCount) * 100 : 0;
+      const percentage = totalSickCount > 0 ? (count / totalSickCount) * 100 : 0;
 
       return {
-        name: disease.name,
-        count: count,
-        percentage: parseFloat(percentage.toFixed(1))
+        name: disease.name,     
+        count: count,           
+        percentage: parseFloat(percentage.toFixed(1)) 
       };
     });
 
     return chartData.sort((a, b) => b.count - a.count);
+  }
+
+  async getRecentActivities() {
+    const recent = await prisma.detectionHistory.findMany({
+      take: 4,
+      orderBy: {
+        detectedAt: 'desc',
+      },
+      include: {
+        disease: true,
+      },
+    });
+
+    return recent.map(item => ({
+      id: item.id,
+      diseaseName: item.disease.name,
+      status: item.status,
+      imageUrl: item.imageUrl,
+      time: item.detectedAt, 
+    }));
   }
 }

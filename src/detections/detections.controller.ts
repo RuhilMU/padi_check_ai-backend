@@ -1,4 +1,4 @@
-import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, UseGuards, Request } from '@nestjs/common'; // Tambah UseGuards, Request
+import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, UseGuards, Request, Get } from '@nestjs/common'; // Tambah UseGuards, Request
 import { DetectionsService } from './detections.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -8,6 +8,11 @@ import { AuthGuard } from '@nestjs/passport';
 @Controller('detections')
 export class DetectionsController {
   constructor(private readonly detectionsService: DetectionsService) {}
+  @UseGuards(AuthGuard('jwt'))
+  @Get('history')
+  async getHistory(@Request() req) {
+    return this.detectionsService.findAllHistory(req.user.userId);
+  }
 
   @Post()
   @UseGuards(AuthGuard('jwt'))
