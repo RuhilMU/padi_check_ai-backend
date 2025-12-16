@@ -120,7 +120,7 @@ export class DetectionsService {
           headers: {
             ...formData.getHeaders(),
           },
-          timeout: 480000, // lamain timeout
+          timeout: 600000, // lamain timeout
         })
       );
 
