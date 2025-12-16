@@ -1,28 +1,39 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
+import FormData = require('form-data');
+import * as fs from 'fs';
 
 const prisma = new PrismaClient();
 
 @Injectable()
 export class DetectionsService {
+  private readonly logger = new Logger(DetectionsService.name);
+  private readonly mlApiUrl: string;
+
+  constructor(private readonly httpService: HttpService) {
+    this.mlApiUrl = process.env.ML_API_URL || 'http://localhost:5000';
+    this.logger.log(`ML API URL: ${this.mlApiUrl}`);
+  }
 
   async processDetection(file: Express.Multer.File, userId: string) {
-    
+
     const baseUrl = 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN;
     const imageUrl = `${baseUrl}/uploads/${file.filename}`;
 
-    // MOCK ML Purapura panggil AI Python, acak dulu biar backend jalan
-    const mockResult = this.mockPrediction(); 
+    // Call actual ML service
+    const mlResult = await this.callMLService(file);
 
     const disease = await prisma.disease.findUnique({
-      where: { code: mockResult.predictedClass },
+      where: { code: mlResult.predictedClass },
       include: {
         articles: true,
       }
     });
 
     if (!disease) {
-      throw new NotFoundException(`Penyakit ${mockResult.predictedClass} tidak ditemukan di database.`);
+      throw new NotFoundException(`Penyakit ${mlResult.predictedClass} tidak ditemukan di database.`);
     }
 
     const newId = await this.generateDetectionId();
@@ -30,7 +41,7 @@ export class DetectionsService {
       data: {
         id: newId,
         imageUrl: imageUrl,
-        accuracy: parseFloat((mockResult.confidence * 100).toFixed(1)),
+        accuracy: parseFloat((mlResult.confidence * 100).toFixed(1)),
         status: disease.code === 'healthy' ? 'Sehat' : 'Terdeteksi Penyakit',
         diseaseId: disease.id,
         userId: userId,
@@ -89,25 +100,49 @@ export class DetectionsService {
     return `DET-${year}-${sequence}`;
   }
 
-  // MOCKING AI (Nanti apus kalau model sudah jadey)
-  private mockPrediction() {
-    const classes = [
-      'leaf_scald', 
-      'bacterial_leaf_blight', 
-      'narrow_brown_spot', 
-      'healthy', 
-      'leaf_blast', 
-      'brown_spot'
-    ];
-    
-    // Pilih acak 1 penyakit
-    const randomClass = classes[Math.floor(Math.random() * classes.length)];
-    // Acak confidence antara 70% - 99%
-    const randomConfidence = 0.7 + Math.random() * 0.29;
+  /**
+   * Call ML service to get prediction
+   */
+  private async callMLService(file: Express.Multer.File): Promise<{ predictedClass: string, confidence: number }> {
+    try {
+      this.logger.log(`Calling ML service for file: ${file.filename}`);
 
-    return {
-      predictedClass: randomClass,
-      confidence: randomConfidence,
-    };
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(file.path), {
+        filename: file.originalname,
+        contentType: file.mimetype,
+      });
+
+      // Call ML service
+      const response = await firstValueFrom(
+        this.httpService.post(`${this.mlApiUrl}/predict`, formData, {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          timeout: 30000, // 30 second timeout
+        })
+      );
+
+      this.logger.log(`ML service response: ${JSON.stringify(response.data)}`);
+
+      return {
+        predictedClass: response.data.predictedClass,
+        confidence: response.data.confidence,
+      };
+
+    } catch (error) {
+      this.logger.error(`ML service error: ${error.message}`);
+
+      if (error.code === 'ECONNREFUSED') {
+        throw new InternalServerErrorException('ML service tidak dapat dihubungi. Pastikan service berjalan.');
+      }
+
+      if (error.response) {
+        throw new InternalServerErrorException(`ML service error: ${error.response.data?.detail || error.message}`);
+      }
+
+      throw new InternalServerErrorException('Gagal melakukan prediksi. Silakan coba lagi.');
+    }
   }
 }
